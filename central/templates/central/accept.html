@@ -1,0 +1,1 @@
+{% extends 'central/base.html' %}{% block content %}<h1>Crear tu cuenta independiente</h1><section class="card narrow"><p>Estás aceptando una invitación de administración. No compartas tu contraseña.</p><form method="post">{% csrf_token %}{{ form.as_p }}<button>Aceptar invitación</button></form></section>{% endblock %}
