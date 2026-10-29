@@ -1,0 +1,1 @@
+{% extends 'central/base.html' %}{% block content %}<h1>{{ title }}</h1><section class="card narrow"><form method="post">{% csrf_token %}{{ form.as_p }}<button>{{ submit }}</button></form></section>{% endblock %}

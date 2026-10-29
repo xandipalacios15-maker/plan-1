@@ -1,7 +1,8 @@
-from django.urls import path
+from django.urls import include, path
 from central import views
 
 urlpatterns = [
+    path("business/<uuid:business_id>/operations/", include("operations.urls")),
     path("login/", views.sign_in, name="login"),
     path("logout/", views.sign_out, name="logout"),
     path("", views.home, name="home"),

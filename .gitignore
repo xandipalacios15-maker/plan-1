@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.sqlite3
 *.sqlite3-*
+*.sqlite3.*
 .env
 .static/
 .ruff_cache/
