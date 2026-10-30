@@ -1,118 +1,156 @@
-# Central de Datos para Dropshippers — Fases 1 y 2
+# Central de Datos para Dropshippers — Fase 3, laboratorio sintético
 
-Aplicación privada para un negocio, inicialmente con dos administradores humanos independientes. Fase 1 aprobada: `f234500c1aafc1083c9ef4ab4610ef932b78ddd0`. Esta rama añade exclusivamente **Fase 2: catálogo y captura interna de pedidos locales**. No hay despliegue ni integraciones conectadas.
+Esta rama añade **solo infraestructura de eventos y ejecución en segundo plano**, basada en la Fase 2 aprobada (`d2c65e8ec1d5e82965cbe7505b9a65ac9a219b2a`). Conserva Django 5.2 LTS, SQLite de desarrollo, autenticación, catálogo y captura local. No fusiona `main`, no despliega y no conecta proveedores ni servicios de IA.
 
-Stack conservado: Python 3.12+, Django 5.2 LTS, SQLite de desarrollo, HTML renderizado en servidor y CSS adaptable. SQLite sigue siendo **solo para desarrollo y pruebas**. PostgreSQL, WSGI/HTTPS, backups y validación de infraestructura productiva siguen pendientes. No se añadió un backend de producción.
+**No uses ni migres tus bases de Kali de Fase 1 o Fase 2 para esta revisión.** Usa otra copia del repositorio y una base nueva. Los comandos siguientes generan una ruta de laboratorio independiente; los scripts automatizados usan bases temporales propias.
 
-## Instalación local (Linux/Kali/macOS)
+## Prueba automatizada sin tocar tu instalación
 
-En un equipo nuevo:
+Desde esta rama, con Python 3.12+ y un entorno virtual:
 
 ```sh
-git clone --branch feat/phase-2-orders https://github.com/xandipalacios15-maker/plan-1.git
-cd plan-1
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-browser.txt
+python scripts/smoke_phase3.py
+```
+
+Requiere Chromium instalado; `CHROMIUM_PATH` permite indicar su ruta. El script crea su base, ejecuta migraciones únicamente allí, inicia procesos locales y Chromium con datos sintéticos y los detiene al terminar. No deja usuarios ni un servidor disponibles para revisión manual. Demuestra que el dispatcher, worker y scheduler funcionan como procesos independientes sin navegador, y comprueba también la interfaz. No descarga Chromium ni contacta APIs de negocio.
+
+## Abrir un laboratorio manual independiente en Kali
+
+Conserva tus respaldos y tu carpeta de Fase 2. En otra carpeta:
+
+```sh
+git clone --branch feat/phase-3-runtime https://github.com/xandipalacios15-maker/plan-1.git plan-1-lab-fase3
+cd plan-1-lab-fase3
 umask 077
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements.txt
+
+PHASE3_LAB_DIR="$(mktemp -d "$HOME/central-fase3-XXXXXX")"
+export APP_DATABASE="$PHASE3_LAB_DIR/runtime.sqlite3"
 export APP_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
 export APP_DEBUG=1
 export APP_ALLOWED_HOSTS=localhost,127.0.0.1
-python manage.py migrate
-python manage.py bootstrap_business --email tu-correo --name Tu-nombre --business Tu-negocio
-python manage.py runserver 127.0.0.1:8000
+export APP_SYNTHETIC_RUNTIME=1
+
+# Solo crea el esquema si este archivo de laboratorio aún no existe.
+if [ ! -e "$APP_DATABASE" ]; then
+    python manage.py migrate --noinput && python manage.py runtime_init
+else
+    printf '%s\n' 'Cancelado: el archivo ya existe. No se migra ni inicializa.'
+fi
 ```
 
-Sustituye los argumentos del bootstrap. La contraseña se solicita sin eco; mínimo 12 caracteres y validadores de robustez. No hay cuentas ni contraseñas predeterminadas. El comando crea el negocio, el primer administrador, apariencia y coordinador virtual. La segunda persona se incorpora por **Invitación**, con enlace privado de un uso y vigencia de 24 horas; no se envía correo.
+`runtime_init` pide una contraseña robusta de al menos 12 caracteres, sin mostrarla. Crea únicamente el perfil **runtime-admin@example.test**, un negocio sintético y un ejecutor **pausado**. No existe contraseña predeterminada, no se envía correo y no se modifica ninguna cuenta anterior. Rechaza bases con humanos, negocios o pedidos existentes, o que ya estén inicializadas. También prohíbe la ruta habitual `db.sqlite3` de la raíz del proyecto.
 
-Abre el navegador de tu equipo en el puerto 8000, ruta `/login/`. El servidor es local, no un despliegue productivo. Conserva `APP_SECRET_KEY` privada y estable entre reinicios: cambiarla invalida sesiones y altera las firmas de deduplicación de pedidos. `.env.example` no se carga automáticamente. `APP_DATABASE` permite una ruta privada; el valor por defecto es `db.sqlite3`, ignorado por Git. `APP_DEBUG=1` es exclusivo de desarrollo.
+Mantén la misma terminal y sus variables para los comandos siguientes. Conserva privadamente la clave y la ruta si vas a reabrir este laboratorio; no vuelvas a ejecutar migraciones o inicialización para reiniciarlo. `.env.example` no se carga automáticamente. Cambiar la clave invalida las sesiones de este laboratorio.
 
-## Actualizar una instalación existente de Fase 1
+## Iniciar los procesos locales y la interfaz
 
-**No crees otra cuenta ni vuelvas a ejecutar bootstrap si ya tienes tus perfiles.** Detén el servidor con Ctrl+C y, desde la raíz de tu copia de Kali:
+En la misma terminal, para que todos hereden **la base nueva**, no las variables de tu instalación anterior:
 
 ```sh
-git status --short
-# Si hay cambios locales, consérvalos antes de cambiar de rama. No uses reset --hard.
-git fetch origin
-git switch --track origin/feat/phase-2-orders
-# Si ya existe la rama local, usa: git switch feat/phase-2-orders
-. .venv/bin/activate
-python -m pip install -r requirements.txt
+python manage.py runtime_dispatch > "$PHASE3_LAB_DIR/dispatcher.log" 2>&1 &
+PHASE3_DISPATCH_PID=$!
+python manage.py runtime_worker > "$PHASE3_LAB_DIR/worker.log" 2>&1 &
+PHASE3_WORKER_PID=$!
+python manage.py runtime_scheduler > "$PHASE3_LAB_DIR/scheduler.log" 2>&1 &
+PHASE3_SCHEDULER_PID=$!
+python manage.py runserver 127.0.0.1:8001
 ```
 
-Con el mismo `APP_DATABASE` y la misma `APP_SECRET_KEY` de Fase 1 exportados, haz primero una copia privada de la base **con el servidor detenido**. Si usas la ruta predeterminada:
+Abre el navegador de tu equipo en el puerto **8001**, ruta `/login/`, con el perfil sintético y la contraseña elegida. El puerto es distinto del habitual de Fase 2. Entra al negocio y a **Tareas**. La interfaz muestra eventos, cola, intentos, correlación, programaciones, alertas y latidos. **Reanudado** describe el control del ejecutor, no demuestra que existan procesos: revisa los latidos.
+
+Estos son procesos locales, sin supervisor instalado ni despliegue productivo. Los workers no dependen del navegador ni del servidor HTTP, pero sí de que sus procesos y la máquina sigan activos. No asumas que sobreviven al cierre de la terminal o de Codex.
+
+Al terminar, detén `runserver` con Ctrl+C y luego detén solo los tres procesos que iniciaste:
 
 ```sh
-umask 077
-cp db.sqlite3 "db.sqlite3.backup-$(date +%Y%m%d-%H%M%S)"
-export APP_DEBUG=1
-export APP_ALLOWED_HOSTS=localhost,127.0.0.1
-python manage.py migrate
-python manage.py runserver 127.0.0.1:8000
+kill "$PHASE3_DISPATCH_PID" "$PHASE3_WORKER_PID" "$PHASE3_SCHEDULER_PID"
+wait "$PHASE3_DISPATCH_PID" "$PHASE3_WORKER_PID" "$PHASE3_SCHEDULER_PID" 2>/dev/null || true
 ```
 
-Si usas `APP_DATABASE`, respalda ese archivo, no otro. Mantén también privada la copia; el repositorio ignora nombres que contengan `.sqlite3`. La migración nueva `operations/0001_initial.py` añade tablas y no modifica las migraciones ni datos de Fase 1. Las pruebas verifican conservación de perfil, membresía y apariencia al migrar; respaldar tu instalación sigue siendo necesario.
+El laboratorio queda conservado en su carpeta privada. No hay que borrar ni restaurar bases para detenerlo.
 
-## Qué funciona realmente
+## Qué probar
 
-- Se conservan login, sesiones, cambio de contraseña, perfiles humanos, invitación, roles de Fase 1, aislamiento, auditoría y apariencia privada.
-- Altas y edición local de proveedores, productos, variantes y campañas de origen. Activación/desactivación; no hay borrado ni sincronización externa. SKU único por negocio; los nombres de catálogo no son campos para PII.
-- Captura interna de un producto/variante por pedido: nombre, dirección, código postal si aplica, WhatsApp, correo solo con finalidad explícita, cantidad, precio acordado, moneda, fuente y campaña opcional. El precio no se toma de una API. Los importes usan decimales; cantidad 1–999, precio positivo con dos decimales.
-- Consentimiento obligatorio para registrar/usar datos del pedido. Contacto por WhatsApp/email, marketing por cada canal y compartición con proveedor/transportadora tienen casillas independientes, desmarcadas. Se guarda versión de política, fecha y operador que registró la declaración; no se verifica automáticamente el consentimiento con el cliente.
-- Reenvío exacto del formulario idempotente. Detección de posible duplicado durante 24 horas por datos normalizados y HMAC. No se guarda PII en la auditoría.
-- Estados locales `recibido → validado` o `recibido → cancelado`, con comprobación del estado anterior e historial. Validado/cancelado son terminales en esta fase. No se crean pedidos de proveedores, confirmaciones a clientes ni envíos.
-- PII en tabla operativa separada. Listas y resumen del pedido nunca incluyen datos de cliente. Consulta privada exige **rol de atención o logística + asignación vigente a ese pedido**, de 8 horas, auditable y revocable. Marketing, creatividad y analítica general no tienen acceso. Un administrador tampoco lee PII automáticamente: debe asignar un rol y una tarea legítimos.
+1. **Habilitación y salud:** el ejecutor empieza pausado; los procesos pueden emitir latidos aunque esté pausado. Reanúdalo explícitamente desde Tareas. Sin latidos no se afirma disponibilidad.
+2. **Evento/outbox:** pulsa Emitir evento sintético. Solo admite opciones cerradas y UUID; no introduzcas PII, URLs ni identificadores de pedidos reales. Guardar crea evento y outbox en una transacción. El dispatcher genera un único trabajo.
+3. **Reintentos:** elige Fallar una vez o Agotar reintentos. Los intentos quedan persistidos; espera 2 y luego 4 segundos entre fallos, sujeto al límite de frecuencia. El máximo predeterminado es 3 intentos. El fallo permanente termina en el primero.
+4. **Pausa:** puedes pausar/reanudar trabajos en cola o esperando reintento. Pausar el ejecutor impide nuevos despachos, reclamaciones y emisiones programadas. **No interrumpe un intento ya iniciado**; la pausa individual de un trabajo en ejecución se rechaza.
+5. **Scheduler:** crea una programación (inicialmente deshabilitada), de intervalo mínimo 10 segundos y máximo 10 emisiones. Habilítala. Al agotar el presupuesto se deshabilita; no recupera todos los intervalos perdidos tras una parada.
+6. **Alertas:** el fallo definitivo y las reservas vencidas generan alertas internas. Reconocerlas queda auditado, pero no resuelve su causa. No se envían notificaciones. Los latidos antiguos pueden generar alertas de componente cuando otro proceso sigue observando.
+7. **Permisos:** solo un administrador del mismo negocio puede emitir/controlar. Un lector puede observar, pero sus mutaciones devuelven 403. Recursos de otro negocio devuelven 404. El coordinador virtual no recibe login ni herramientas.
 
-El módulo **Roles operativos** permite al administrador asignar estos roles adicionales sin cambiar los roles humanos de Fase 1. Cambiar/reconfirmar un rol revoca sus asignaciones anteriores. Esta autorización local por pedido no es un motor de tareas ni implementa Fase 3.
+Para emitir desde CLI, como **operador de laboratorio**, sin suplantar a un humano autenticado:
 
-## Flujo de revisión de Fase 2
+```sh
+python manage.py runtime_emit --kind synthetic.order.received --handler flaky
+```
 
-Usa únicamente datos sintéticos durante la revisión. No hay credenciales de terceros que configurar.
+Para comprobar idempotencia CLI, repite una clave y los mismos argumentos:
 
-1. Como administrador, crea **Proveedor → Producto → Variante (si aplica) → Campaña**. Los nombres y referencias no deben contener datos personales.
-2. Abre **Pedidos → Registrar pedido local**. Completa los campos, fuente/campaña coherentes y solo consentimientos expresados. En Colombia el código postal es opcional, de seis dígitos si se indica; para otros países se exige un código y validación manual. El WhatsApp se normaliza, no se verifica su existencia.
-3. Guarda: verás UUID, producto, importe, fuente y estado, sin PII. Reenviar idéntico formulario no crea otro pedido; un formulario nuevo con los mismos datos esenciales durante 24 horas se rechaza.
-4. En **Roles operativos**, asigna Atención a una persona del negocio. En el pedido, entra a **Asignar acceso por tarea** y elige esa persona y finalidad Atención. En su sesión aparecerá **Consultar datos por tarea**. Sin el rol o sin asignación vigente recibe 403.
-5. Comprueba que Marketing no pueda leer datos privados, aunque vea el resumen sin PII. Revoca la asignación: vuelve a devolver 403. Los recursos de otro negocio devuelven 404.
-6. Como administrador o responsable operativo asignado, valida o cancela un pedido recibido. El historial y la auditoría registran actor/fecha/UUID, sin datos del cliente. Un estado inválido o desactualizado se rechaza.
+```sh
+PHASE3_EVENT_KEY="$(python -c 'import uuid; print(uuid.uuid4())')"
+python manage.py runtime_emit --key "$PHASE3_EVENT_KEY" --handler record
+python manage.py runtime_emit --key "$PHASE3_EVENT_KEY" --handler record
+```
 
-## Pruebas, lint y build disponibles
+Los UUID de sujeto/correlación se derivan de esa clave si no los indicas. Reusar la clave con otro tipo/handler/UUID se rechaza. Con varios negocios de laboratorio, los comandos exigen seleccionar uno con `--business UUID`.
 
-Con entorno virtual y variables de desarrollo activos:
+Para ejecutar un único ciclo, con los procesos continuos detenidos si quieres observar cada paso:
+
+```sh
+python manage.py runtime_dispatch --once
+python manage.py runtime_worker --once
+python manage.py runtime_scheduler --once
+```
+
+## Arquitectura y límites
+
+- `runtime/models.py` y `migrations/0001_initial.py`: eventos, outbox, trabajos/reservas, intentos, resultado sintético idempotente, programaciones, latidos, alertas y auditoría.
+- `runtime/services.py`: transacciones, correlación, límites, reintentos, tokens contra resultados de reservas antiguas y controles de pausa.
+- `runtime/handlers.py`: registro cerrado de funciones puras sintéticas. Ningún handler consulta PII, pedidos o servicios externos.
+- `runtime/management/`: inicialización protegida y procesos independientes.
+- `runtime/views.py`, `forms.py`, `templates/`: panel y controles RBAC/CSRF, sin ejecutar workers dentro de una petición HTTP.
+- `runtime/tests.py`, `test_migrations.py`, `scripts/smoke_phase3.py`: seguridad, concurrencia acotada, recuperación y regresión.
+
+La única integración con la interfaz previa es el registro del módulo y la ruta Tareas. No hay hooks que encolen automáticamente pedidos de Fase 2; los eventos de pedidos, guías, entregas, incidencias y recaudos son **simulaciones**. No se implementan coordinador, especialistas o colaboración de Fase 4.
+
+SQLite sigue siendo solo de desarrollo. No hay broker externo, infraestructura productiva, alta disponibilidad, renovación de reservas para handlers largos, ejecución externa exactamente una vez ni notificaciones salientes. La retención/limpieza, supervisión del sistema y PostgreSQL requieren trabajo posterior autorizado. Las alertas de salud necesitan un observador vivo; si todos los procesos se detienen, el panel puede mostrar latidos antiguos pero no se crean alertas nuevas hasta que vuelva un observador.
+
+## Validación
+
+Selecciona una base de pruebas nueva como arriba; conserva las variables de ese laboratorio:
 
 ```sh
 python manage.py test -v 2
 ruff check .
 ruff format --check .
 python manage.py check
-python manage.py showmigrations central operations
+python manage.py showmigrations central operations runtime
 python manage.py makemigrations --check --dry-run
 python manage.py collectstatic --noinput
-python -m compileall -q config central operations scripts
+python -m compileall -q config central operations runtime scripts
 python -m pip check
 APP_DEBUG=0 python manage.py check --deploy
 ```
 
-No hay build npm; `collectstatic` y `compileall` son las comprobaciones de artefactos de esta aplicación Django. Las pruebas crean bases temporales y datos sintéticos. `check --deploy` no despliega ni verifica infraestructura productiva real.
+Django usa su propia base temporal para la suite. No hay build npm: las comprobaciones de artefactos son estáticos y compilación Python. `check --deploy` no despliega ni valida HTTPS real.
 
-Navegador opcional, con Chromium instalado (`CHROMIUM_PATH` si hace falta):
+Regresión de navegador, también con sus bases temporales propias:
 
 ```sh
 python -m pip install -r requirements-browser.txt
 python scripts/smoke_browser.py
 python scripts/smoke_phase2.py
+python scripts/smoke_phase3.py
 ```
 
-Ambos scripts usan bases temporales, servidores solo de loopback y datos sintéticos. Detienen sus servidores y eliminan sus cuentas al terminar: para usar manualmente la aplicación debes iniciar `runserver` de nuevo sobre tu base. El smoke de Fase 2 crea catálogo por UI, captura pedido, comprueba consentimientos, duplicados, permisos de PII, revocación y estado local, a 390/1440 px y sin llamadas externas.
+Detalles: [seguridad/arquitectura de Fase 3](docs/PHASE3.md) y [resultados de validación](docs/PHASE3_VALIDATION.md). Para revisar la instalación aprobada de Fase 2, consulta [su README en el commit aprobado](https://github.com/xandipalacios15-maker/plan-1/blob/d2c65e8ec1d5e82965cbe7505b9a65ac9a219b2a/README.md); esas instrucciones históricas no son un procedimiento para migrar tus bases a esta rama.
 
-## Archivos y límites
-
-- `central/`, `config/`: fundación preservada; se registró `operations` y se añadieron enlaces al módulo. Las migraciones `central/0001` y `0002` no cambian.
-- `operations/`: modelos, formularios, servicios transaccionales, permisos, vistas, plantillas, migración inicial y pruebas de Fase 2.
-- `scripts/smoke_phase2.py`: recorrido de navegador adicional.
-- [Seguridad de Fase 2](docs/PHASE2.md), [validación de Fase 2](docs/PHASE2_VALIDATION.md), [revisión histórica de Fase 1](docs/REVIEW_PHASE1.md) y [seguridad de la fundación](docs/SECURITY.md).
-
-No se implementaron pedidos multilínea, edición posterior de PII, retiro de consentimiento, exportación/eliminación, envío de mensajes, compra, tracking, conciliación, colas, workers, scheduler, agentes ejecutables ni integraciones reales. El código postal y teléfono solo tienen validación de formato. No hay una garantía de deduplicación semántica ni validación externa de identidad, consentimiento o dirección. Las listas muestran los últimos 100 registros, sin búsqueda/paginación avanzada.
-
-No hay despliegue productivo. PostgreSQL, HTTPS real, MFA, recuperación por correo, carga concurrente, backups/restauración y políticas de retención siguen pendientes. No avanzar a Fase 3 ni posteriores sin autorización explícita.
+**No se conectan servicios, no se procesan pedidos reales, no se despliega y no se avanza a Fase 4 sin aprobación explícita.**

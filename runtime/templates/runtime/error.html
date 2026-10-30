@@ -1,0 +1,1 @@
+{% extends 'central/base.html' %}{% block content %}<h1>Acción no aplicada</h1><div role="alert">{% for error in errors %}<p>{{ error }}</p>{% endfor %}</div><a href="{% url 'tasks' member.business_id %}">Volver al runtime</a>{% endblock %}

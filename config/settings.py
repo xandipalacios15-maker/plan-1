@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "central",
     "operations",
+    "runtime",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -84,3 +85,6 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+
+# Seguridad: deshabilitado salvo laboratorio separado, marcado como sintético.
+SYNTHETIC_RUNTIME = os.environ.get("APP_SYNTHETIC_RUNTIME", "0") == "1"
